@@ -1,69 +1,82 @@
 # olx-aluguel-mcp
 
-Servidor MCP para **buscar alquileres en OLX Brasil** y **detectar posibles fraudes** desde Claude.
+An MCP server that lets Claude **search rentals on OLX Brazil** and **flag likely rental scams** before you send anyone money.
 
-Lee las páginas públicas de OLX (las mismas que ves en el navegador) y te dice, para cada anuncio:
+## Why I built it
 
-- **Todos los pagos**: alquiler, condominio, IPTU, total mensual, alquiler "bruto" vs "líquido" (bonificación por pago puntual), seguro incendio, FCI, gastos bancarios, caução, seguro-fiança, tasas de contrato, qué servicios están incluidos (agua, luz, internet…).
-- **¿Directo con el dueño?**: particular vs. inmobiliaria, con evidencias (CRECI, nombre de empresa, plan comercial, feed de ZAP…).
-- **Contactos que aparecen**: teléfonos, números escritos con palabras, e-mails, links, Instagram, WhatsApp, CRECI; y si el anunciante tiene teléfono registrado/verificado en OLX.
-- **Dirección**: barrio, CEP, calle del CEP (ViaCEP), direcciones y referencias que menciona el texto, otros barrios mencionados, enlace al mapa aproximado.
-- **Perfil del anunciante**: antigüedad de la cuenta, identidad/teléfono/e-mail verificados por OLX, reputación, ciudad del anunciante, última actividad.
-- **Riesgo de fraude (0–100)**: precio vs. mercado de la zona, cuenta nueva, anunciante en otro estado, frases típicas del *golpe do aluguel* (pago antes de visitar, dueño en el exterior, llaves por correo, urgencia, sacar la conversación de OLX…), pocas fotos, etc. Incluye preguntas para el anunciante y un checklist de seguridad.
+When I moved to Brazil I had to find an apartment in a city I didn't know, in a language I was still learning, on a marketplace where the *golpe do aluguel* (rental scam) is common. Every listing hid a different set of costs, and I couldn't tell a private owner from an agency, or a real ad from a fake one.
 
-## Herramientas
+So I turned the checklist I was doing by hand into a tool.
 
-| Herramienta | Qué hace |
+## What it tells you about each listing
+
+- **Every cost**: rent, condo fee, IPTU, the real monthly total, "gross" vs. "net" rent (punctuality discounts), fire insurance, FCI, bank fees, deposit (*caução*), *seguro-fiança*, contract fees, and which utilities are included.
+- **Owner or agency?** With evidence: CRECI license, company name, commercial plan, ZAP feed.
+- **Contacts found in the text**: phone numbers (including numbers spelled out in words), emails, links, Instagram, WhatsApp, and whether OLX verified the advertiser's phone.
+- **Address**: neighborhood, CEP and the street it maps to (via ViaCEP), places mentioned in the description, and an approximate map link.
+- **Advertiser profile**: account age, OLX identity/phone/email verification, reputation, advertiser's city, last activity.
+- **Scam risk score (0–100)**: price vs. the local market, brand-new account, advertiser in another state, typical scam phrases (pay before visiting, owner abroad, keys by mail, urgency, moving the chat off OLX), too few photos, and more. It also gives you questions to ask the advertiser and a safety checklist.
+
+## Tools
+
+| Tool | What it does |
 |---|---|
-| `olx_buscar_alquileres` | Búsqueda con filtros (ubicación, tipo, precio, habitaciones, baños, vagas, m², particular/profesional, mobiliado, acepta mascotas, texto, orden, página). Devuelve total mensual, R$/m² y alertas rápidas. Con `analizar_top=N` analiza a fondo los primeros N. |
-| `olx_ver_anuncio` | Ficha completa de un anuncio (URL o número). |
-| `olx_analizar_riesgo` | Igual que la anterior + comparación de precio con anuncios similares de la zona. |
-| `olx_comparar_anuncios` | Tabla comparativa de 2 a 10 anuncios (ordenada por costo total). |
-| `olx_precios_mercado` | Mediana, rango P25–P75 y R$/m² de una zona. |
+| `olx_buscar_alquileres` | Search with filters (location, type, price, bedrooms, bathrooms, parking, m², private/professional, furnished, pets, text, sort, page). Returns monthly total, R$/m² and quick alerts. With `analizar_top=N` it deep-analyzes the first N results. |
+| `olx_ver_anuncio` | Full breakdown of a single listing (URL or ID). |
+| `olx_analizar_riesgo` | Same as above, plus a price comparison against similar listings in the area. |
+| `olx_comparar_anuncios` | Side-by-side table of 2–10 listings, sorted by total monthly cost. |
+| `olx_precios_mercado` | Median, P25–P75 range and R$/m² for an area. |
 
-La **ubicación** es la parte de la URL de OLX que va después de `/imoveis/aluguel/`, por ejemplo:
+The **location** is the part of the OLX URL after `/imoveis/aluguel/`, for example:
 
-- `estado-pr/regiao-de-curitiba-e-paranagua` → Curitiba y región
-- `estado-pr/regiao-de-curitiba-e-paranagua/boa-vista` → zona Boa Vista de Curitiba
-- `estado-pr/regiao-de-curitiba-e-paranagua/boa-vista/taruma` → barrio Tarumã
+- `estado-pr/regiao-de-curitiba-e-paranagua` → Curitiba and region
+- `estado-pr/regiao-de-curitiba-e-paranagua/boa-vista` → Boa Vista district
+- `estado-pr/regiao-de-curitiba-e-paranagua/boa-vista/taruma` → Tarumã neighborhood
 
-Truco: filtra en olx.com.br como quieras y pásale la URL a `olx_buscar_alquileres` en el parámetro `url`.
+Tip: filter on olx.com.br however you like and pass that URL to `olx_buscar_alquileres` in the `url` parameter.
 
-## Instalación rápida (Linux)
+## How it works
 
-Copia la carpeta y registra en Claude Desktop el lanzador `run.sh` (la primera vez instala las dependencias solo, en `.venv`, y deja el registro en `install.log`):
+- **No official API**, so it reads the same public pages you see in the browser. Requests go through `curl_cffi` (presenting as Chrome) with a 1.5 s delay between calls.
+- **Fallback to a real browser**: if Cloudflare asks for verification, it switches to Playwright + Chromium automatically.
+- **The score is explainable, not a black box**: every point comes from a named red or green flag, and the response lists them, so you can see *why* a listing looks risky.
+- **Tests against real saved pages**: `tests/fixtures` holds an agency listing, a scam listing and a search page. When OLX changes its HTML, the tests break before the tool silently returns wrong data.
+
+## Quick install (Linux)
+
+Register the `run.sh` launcher in Claude Desktop. On first run it installs its dependencies into `.venv` and logs to `install.log`:
 
 ```json
 {
   "mcpServers": {
     "olx-aluguel": {
       "command": "bash",
-      "args": ["/RUTA/A/olx-aluguel-mcp/run.sh"]
+      "args": ["/PATH/TO/olx-aluguel-mcp/run.sh"]
     }
   }
 }
 ```
 
-## Instalación manual
+## Manual install
 
-Requisitos: **Python 3.10 o superior** y la app **Claude Desktop**.
+Requirements: **Python 3.10+** and **Claude Desktop**.
 
-1. Descomprime la carpeta, por ejemplo en `C:\mcp\olx-aluguel-mcp` (Windows) o `~/mcp/olx-aluguel-mcp` (Linux/Mac).
-2. Abre una terminal en esa carpeta e instala:
+1. Put the folder somewhere, e.g. `C:\mcp\olx-aluguel-mcp` (Windows) or `~/mcp/olx-aluguel-mcp` (Linux/Mac).
+2. Install it from that folder:
 
    ```bash
    python -m pip install -e .
    ```
 
-   (En Linux/Mac puede ser `python3`. Si tu sistema lo pide, usa un entorno virtual: `python -m venv .venv` y luego `.venv\Scripts\pip install -e .` en Windows o `.venv/bin/pip install -e .` en Linux/Mac.)
+   (Use `python3` on Linux/Mac if needed. If your system requires a virtual environment: `python -m venv .venv`, then `.venv\Scripts\pip install -e .` on Windows or `.venv/bin/pip install -e .` on Linux/Mac.)
 
-3. Comprueba que arranca (se queda esperando; ciérralo con Ctrl+C):
+3. Check that it starts (it will wait for input; stop it with Ctrl+C):
 
    ```bash
    python -m olx_aluguel_mcp
    ```
 
-4. En Claude Desktop: **Configuración → Desarrollador → Editar configuración** y agrega el servidor a `claude_desktop_config.json`:
+4. In Claude Desktop go to **Settings → Developer → Edit config** and add the server to `claude_desktop_config.json`:
 
    **Windows**
    ```json
@@ -82,39 +95,45 @@ Requisitos: **Python 3.10 o superior** y la app **Claude Desktop**.
    {
      "mcpServers": {
        "olx-aluguel": {
-         "command": "/RUTA/A/olx-aluguel-mcp/.venv/bin/python",
+         "command": "/PATH/TO/olx-aluguel-mcp/.venv/bin/python",
          "args": ["-m", "olx_aluguel_mcp"]
        }
      }
    }
    ```
 
-   Si no usaste entorno virtual, pon la ruta de tu Python (en Windows: `where python`; en Linux/Mac: `which python3`).
+   Without a virtual environment, use the path to your Python (`where python` on Windows, `which python3` on Linux/Mac).
 
-5. Reinicia Claude Desktop. Deberías ver las herramientas `olx_*` en el menú de herramientas.
+5. Restart Claude Desktop. The `olx_*` tools should appear in the tools menu.
 
-### Si OLX bloquea las consultas
+### If OLX blocks requests
 
-El servidor usa `curl_cffi` (se presenta como Chrome) y espera 1,5 s entre peticiones. Si aun así Cloudflare pide verificación, instala el plan B con navegador real:
+Install the real-browser fallback:
 
 ```bash
 python -m pip install playwright
 python -m playwright install chromium
 ```
 
-Se usa automáticamente cuando aparece la verificación. Para usarlo siempre, agrega `"env": {"OLX_USE_BROWSER": "1"}` en la configuración del servidor.
+It kicks in automatically when a verification page appears. To always use it, add `"env": {"OLX_USE_BROWSER": "1"}` to the server config.
 
-## Ejemplos de uso (en Claude)
+## Example prompts
 
-- "Busca apartamentos de 1 o 2 habitaciones en Curitiba hasta R$ 2.000, solo de particulares, y analiza los 5 primeros."
-- "Analiza este anuncio: https://pr.olx.com.br/regiao-de-curitiba-e-paranagua/imoveis/…"
-- "Compara estos 3 anuncios y dime cuál sale más barato al mes con todos los gastos."
-- "¿Cuánto cuesta en promedio un apartamento de 2 habitaciones en el Tarumã?"
+- "Find 1–2 bedroom apartments in Curitiba up to R$ 2,000, private owners only, and analyze the top 5."
+- "Analyze this listing: https://pr.olx.com.br/regiao-de-curitiba-e-paranagua/imoveis/…"
+- "Compare these 3 listings and tell me which one is cheapest per month with every fee included."
+- "What does a 2-bedroom apartment cost on average in Tarumã?"
 
-## Limitaciones y uso responsable
+> The tool's output is in Spanish, its author's first language.
 
-- El puntaje de fraude es **heurístico**: sirve para priorizar y hacer las preguntas correctas; no garantiza que un anuncio sea seguro o falso. Nunca pagues nada antes de visitar el inmueble y ver la matrícula.
-- El **teléfono completo** del anunciante no se extrae: OLX solo lo muestra al pulsar "Ver telefone" en su página, y este servidor respeta eso.
-- La dirección de OLX suele ser **aproximada** (la calle/tramo del CEP), salvo que el anunciante publique la dirección completa.
-- Depende del HTML de OLX: si OLX cambia su web, habrá que ajustar `parsers.py`. Los tests (`python -m pytest tests`) ayudan a detectarlo.
-- Es para **uso personal** y con pocas consultas. Los Términos de Uso de OLX limitan la extracción automatizada; no lo uses para recolectar datos masivamente ni para republicarlos.
+## Limitations and responsible use
+
+- The scam score is a **heuristic**: it helps you prioritize and ask the right questions. It doesn't prove a listing is safe or fake. Never pay anything before visiting the property and checking the *matrícula*.
+- The advertiser's **full phone number** is not extracted. OLX only shows it after clicking "Ver telefone", and this server respects that.
+- OLX addresses are usually **approximate** (the CEP's street segment) unless the advertiser publishes the full address.
+- It depends on OLX's HTML: if the site changes, `parsers.py` needs updating. Run `python -m pytest tests` to catch it.
+- **Personal use, low volume.** OLX's Terms of Use restrict automated extraction. Don't use it to harvest data at scale or republish it.
+
+## License
+
+MIT
